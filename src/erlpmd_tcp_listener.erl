@@ -21,7 +21,7 @@
 %% THE SOFTWARE.
 %%
 
--module(tcp_listener).
+-module(erlpmd_tcp_listener).
 
 -behaviour(gen_server).
 

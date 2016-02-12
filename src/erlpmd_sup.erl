@@ -44,6 +44,6 @@ start_link(Ips,Port) when is_list(Ips) ->
 
 init([Ips,Port]) when is_list (Ips) ->
 	ErlPMD = {erlpmd, {erlpmd, start_link, [[]]}, transient, 5000, worker, [erlpmd]},
-	Listeners = [{{ip, Ip}, {tcp_listener, start_link, [[Ip,Port]]}, transient, 5000, worker, [tcp_listener]} || Ip <- Ips],
+	Listeners = [{{ip, Ip}, {erlpmd_tcp_listener, start_link, [[Ip,Port]]}, transient, 5000, worker, [erlpmd_tcp_listener]} || Ip <- Ips],
 	{ok, {{one_for_one, 5, 10}, [ErlPMD | Listeners]}}.
 
