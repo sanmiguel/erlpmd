@@ -53,13 +53,15 @@ start_link(Args) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init(_Args) ->
-	Store = erlpmd_ets:init(),
+init([]) ->
+    init([erlpmd]);
+init([Store]) ->
+	S0 = Store:init(),
 	error_logger:info_msg("ErlPMD: started.~n"),
 	self() ! notify_init,
 	{ok, RelaxedCommandCheck} = application:get_env(erlpmd, relaxed_command_check),
     State = #state{
-       store = {erlpmd_ets, Store},
+       store = {Store, S0},
        relaxed_cmd = RelaxedCommandCheck
       },
 	{ok, State}.
