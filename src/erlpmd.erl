@@ -56,7 +56,7 @@ start_link(Args) ->
 init([]) ->
     init([erlpmd]);
 init([Store]) ->
-	S0 = Store:init(),
+    {ok, S0} = Store:init(),
 	error_logger:info_msg("ErlPMD: started.~n"),
 	self() ! notify_init,
 	{ok, RelaxedCommandCheck} = application:get_env(erlpmd, relaxed_command_check),
@@ -94,7 +94,7 @@ handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
     case Store:node_port(NodeName, S0) of
         {error, not_found} ->
 			gen_server:cast(From, {msg, <<$w, 1:8>>, Ip, Port});
-		{NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra, _, _}} ->
+        {ok, {NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra, _, _}}} ->
 			NLen = size(NodeName),
 			ELen = size(Extra),
 			gen_server:cast(From, {msg, <<$w, 0:8, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16, NLen:16, NodeName:NLen/binary, ELen:16, Extra:ELen/binary>>, Ip, Port})
@@ -105,7 +105,7 @@ handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
 handle_cast({{msg, From},<<$n>>, _Fd, Ip, Port}, State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: name(s) request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-    NodeInfos = Store:names(S0),
+    {ok, NodeInfos} = Store:names(S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || [X, Y] <- NodeInfos])),
     %% TODO This looks like a hard-coded port number...
 	gen_server:cast(From, {msg, <<4369:32, Nodes/binary>>, Ip, Port}),
@@ -115,7 +115,7 @@ handle_cast({{msg, From},<<$n>>, _Fd, Ip, Port}, State) ->
 handle_cast({{msg, From},<<$d>>, _Fd, Ip, Port}, State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: dump request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-    NodeDump = Store:dump(S0),
+    {ok, NodeDump} = Store:dump(S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || {X, Y, F} <- NodeDump])),
     %% TODO Again this looks suspiciously like a hard-coded port no
 	gen_server:cast(From, {msg, <<4369:32, Nodes/binary>>, Ip, Port}),
@@ -140,7 +140,7 @@ handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State
 			gen_server:cast(From, stop),
 			{stop, normal, State};
         {ok, _} ->
-			% Disallow killing witl live nodes
+			% Disallow killing with live nodes
 			{noreply, State}
 	end;
 
@@ -165,7 +165,7 @@ handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed
 handle_cast({{close, _From}, Fd}, State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: closed connection: ~p.~n", [Fd]),
-    Store:node_stopped(Fd, S0),
+    ok = Store:node_stopped(Fd, S0),
 	{noreply, State};
 
 handle_cast(Msg, State) ->
