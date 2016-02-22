@@ -106,7 +106,7 @@ handle_cast({{msg, From},<<$n>>, _Fd, Ip, Port}, State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: name(s) request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
     {ok, NodeInfos} = Store:names(S0),
-	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || [X, Y] <- NodeInfos])),
+	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || {X, Y} <- NodeInfos])),
     %% TODO This looks like a hard-coded port number...
 	gen_server:cast(From, {msg, <<Port:32, Nodes/binary>>, Ip, Port}),
 	gen_server:cast(From, {close, Ip, Port}),
