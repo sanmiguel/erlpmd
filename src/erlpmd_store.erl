@@ -17,6 +17,7 @@
             Creation :: non_neg_integer(),
             State :: any()) ->
     ok
+    | {ok, State1 :: any()}
     | {error, registered}
     | {error, Reason :: term()}.
 
@@ -34,9 +35,13 @@
     | {error, Reason :: term()}.
 
 -callback node_stopped(Fd :: inet:socket(), State :: any()) ->
-    ok | {error, Reason :: term()}.
+    ok
+    | {ok, State1 :: any()}
+    | {error, Reason :: term()}.
 
 -callback remove_node(NodeName :: binary(), State :: any()) ->
-    ok | {error, Reason :: term()}.
+    ok
+    | {ok, State1 :: any()}
+    | {error, Reason :: term()}.
 
 %% TODO While it doesn't require any work for erlpmd_ets, maybe we need a callback for KILL_REQ?
