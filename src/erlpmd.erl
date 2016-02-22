@@ -108,7 +108,7 @@ handle_cast({{msg, From},<<$n>>, _Fd, Ip, Port}, State) ->
     {ok, NodeInfos} = Store:names(S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || [X, Y] <- NodeInfos])),
     %% TODO This looks like a hard-coded port number...
-	gen_server:cast(From, {msg, <<4369:32, Nodes/binary>>, Ip, Port}),
+	gen_server:cast(From, {msg, <<Port:32, Nodes/binary>>, Ip, Port}),
 	gen_server:cast(From, {close, Ip, Port}),
 	{noreply, State};
 
@@ -118,7 +118,7 @@ handle_cast({{msg, From},<<$d>>, _Fd, Ip, Port}, State) ->
     {ok, NodeDump} = Store:dump(S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || {X, Y, F} <- NodeDump])),
     %% TODO Again this looks suspiciously like a hard-coded port no
-	gen_server:cast(From, {msg, <<4369:32, Nodes/binary>>, Ip, Port}),
+	gen_server:cast(From, {msg, <<Port:32, Nodes/binary>>, Ip, Port}),
 	gen_server:cast(From, {close, Ip, Port}),
 	{noreply, State};
 
