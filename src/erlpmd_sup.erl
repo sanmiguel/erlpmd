@@ -27,6 +27,7 @@
 
 %% API
 -export([start_link/2]).
+-export([start_link/4]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -38,13 +39,29 @@
 start_link(Ips,Port) when is_list(Ips) ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, [Ips,Port]).
 
+start_link(Ips, Port, StoreMod, StoreOpts) when is_list(Ips), is_atom(StoreMod), is_list(StoreOpts) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [Ips, Port, StoreMod, StoreOpts]).
+
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
-init([Ips,Port]) when is_list (Ips) ->
-    StoreMod = application:get_env(erlpmd, storage_module, erlpmd_ets),
-	ErlPMD = {erlpmd, {erlpmd, start_link, [[StoreMod]]}, transient, 5000, worker, [erlpmd]},
-	Listeners = [{{ip, Ip}, {erlpmd_tcp_listener, start_link, [[Ip,Port]]}, transient, 5000, worker, [erlpmd_tcp_listener]} || Ip <- Ips],
+init([Ips,Port | Opts ]) when is_list (Ips) ->
+    [StoreMod, StoreOpts] =
+        case Opts of
+            [] ->
+                % TODO This is really unclean. No opts if you set it via appenv?
+                SMod = application:get_env(erlpmd, storage_module, erlpmd_ets),
+                [SMod, []];
+            [SMod, SOpts] when is_atom(SMod), is_list(SOpts) ->
+                Opts
+        end,
+    ErlPMD = {erlpmd,
+              {erlpmd, start_link, [[StoreMod, StoreOpts]]},
+              transient, 5000, worker, [erlpmd]},
+	Listeners = [{{ip, Ip},
+                  {erlpmd_tcp_listener, start_link, [[Ip,Port]]},
+                  transient, 5000, worker, [erlpmd_tcp_listener]}
+                 || Ip <- Ips],
 	{ok, {{one_for_one, 5, 10}, [ErlPMD | Listeners]}}.
 

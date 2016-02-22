@@ -1,6 +1,6 @@
 -module(erlpmd_store).
 
--callback init() -> {ok, State :: any()}
+-callback init(Args :: list(any()) ) -> {ok, State :: any()}
                     | {error, Reason :: term()}.
 
 -callback register_node(

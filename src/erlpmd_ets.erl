@@ -4,7 +4,7 @@
 % Callback module to store data in ETS
 
 -export([
-         init/0,
+         init/1,
          register_node/5,
          node_port/2,
          names/1,
@@ -13,7 +13,7 @@
          remove_node/2
         ]).
 
-init() ->
+init([]) ->
     erlpmd = ets:new(erlpmd, [public, named_table]),
     {ok, erlpmd}.
 

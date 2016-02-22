@@ -54,9 +54,9 @@ start_link(Args) ->
 %% ------------------------------------------------------------------
 
 init([]) ->
-    init([erlpmd]);
-init([Store]) ->
-    {ok, S0} = Store:init(),
+    init([erlpmd, []]);
+init([Store, Args]) ->
+    {ok, S0} = Store:init(Args),
 	error_logger:info_msg("ErlPMD: started.~n"),
 	self() ! notify_init,
 	{ok, RelaxedCommandCheck} = application:get_env(erlpmd, relaxed_command_check),
