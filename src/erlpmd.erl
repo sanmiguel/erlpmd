@@ -79,13 +79,17 @@ handle_cast({{msg,From},<<$x, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16
 		[inet_parse:ntoa(Ip), Port, PortNo, NodeType, Proto, HiVer, LoVer, NodeName, Extra, Creation]),
     case Store:register_node(NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra}, Fd, Creation, S0) of
 		ok ->
-			gen_server:cast(From, {msg, <<$y, 0:8, Creation:16>>, Ip, Port});
+			gen_server:cast(From, {msg, <<$y, 0:8, Creation:16>>, Ip, Port}),
+            {noreply, State};
+        {ok, S1} ->
+            gen_server:cast(From, {msg, <<$y, 0:8, Creation:16>>, Ip, Port}),
+            {noreply, State#state{store={Store, S1}}};
         {error, registered} ->
 			% Already registered - reply with error
 			error_logger:error_msg("ErlPMD: ~s 'name' is already registered.~n", [NodeName]),
-			gen_server:cast(From, {msg, <<$y, 1:8, 99:16>>, Ip, Port})
-	end,
-	{noreply, State};
+			gen_server:cast(From, {msg, <<$y, 1:8, 99:16>>, Ip, Port}),
+            {noreply, State}
+    end;
 
 
 handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
@@ -152,21 +156,28 @@ handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed
 handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed_cmd=true}=State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p.~n", [NodeName, inet_parse:ntoa(Ip), Port]),
-    case Store:dump('_', S0) of
-        {ok, []} ->
-			gen_server:cast(From, {msg, <<"NOEXIST">>, Ip, Port});
-        {ok, _} ->
-            Store:remove_node(NodeName, S0),
-			gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port})
-	end,
-	gen_server:cast(From, {close, Ip, Port}),
-	{noreply, State};
+    State1 =
+        case Store:remove_node(NodeName, S0) of
+            ok ->
+                gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port}),
+                State;
+            {ok, S1} ->
+                gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port}),
+                State#state{store={Store, S1}};
+            {error, no_node} ->
+                gen_server:cast(From, {msg, <<"NOEXIST">>, Ip, Port}),
+                State
+        end,
+    gen_server:cast(From, {close, Ip, Port}),
+    {noreply, State1};
 
 handle_cast({{close, _From}, Fd}, State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: closed connection: ~p.~n", [Fd]),
-    ok = Store:node_stopped(Fd, S0),
-	{noreply, State};
+    case Store:node_stopped(Fd, S0) of
+        ok -> {noreply, State};
+        {ok, S1} -> {noreply, State#state{store={Store, S1}}}
+    end;
 
 handle_cast(Msg, State) ->
 	error_logger:warning_msg("ErlPMD: strange cast: ~p.~n", [Msg]),
