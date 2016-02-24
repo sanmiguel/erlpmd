@@ -24,8 +24,6 @@
 -module(erlpmd).
 -behaviour(gen_server).
 
--include_lib("kernel/src/erl_epmd.hrl").
-
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -39,6 +37,11 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+-record(state,
+        {
+         store :: {atom(), any()},
+         relaxed_cmd :: boolean()
+        }).
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
@@ -46,110 +49,144 @@
 start_link(Args) ->
 	gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
+msg(Pid, Msg, Ip, Port) when is_binary(Msg) ->
+    gen_server:cast(Pid, {msg, Msg, Ip, Port}).
+
+close(Pid, Ip, Port) ->
+    gen_server:cast(Pid, {close, Ip, Port}).
+
+stop(Pid) ->
+    gen_server:cast(Pid, stop).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init(_Args) ->
-	erlpmd = ets:new(erlpmd, [public, named_table]),
+init([]) ->
+    init([erlpmd, []]);
+init([Store, Args]) ->
+    {ok, S0} = Store:init(Args),
 	error_logger:info_msg("ErlPMD: started.~n"),
 	self() ! notify_init,
 	{ok, RelaxedCommandCheck} = application:get_env(erlpmd, relaxed_command_check),
-	{ok, RelaxedCommandCheck}.
+    State = #state{
+       store = {Store, S0},
+       relaxed_cmd = RelaxedCommandCheck
+      },
+	{ok, State}.
 
 handle_call(Request, From, State) ->
 	error_logger:warning_msg("ErlPMD: strange call: ~p from: ~p.~n", [Request, From]),
 	{reply, ok, State}.
 
-handle_cast({{msg,From},<<?EPMD_ALIVE2_REQ, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16, NLen:16, Rest/binary>>, Fd, Ip, Port}, State) ->
+handle_cast({{msg,From},<<$x, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16, NLen:16, Rest/binary>>, Fd, Ip, Port}, State) ->
 	<<NodeName:NLen/binary, _ELen:16, Extra/binary>> = Rest,
+    #state{store = {Store, S0}} = State,
 	Creation = random:uniform(3),
 	error_logger:info_msg(
 		"ErlPMD: alive request from ~s:~b PortNo: ~b, NodeType: ~b, Proto: ~b, HiVer: ~b, LoVer: ~b, NodeName: '~s', Extra: ~p, Creation: ~b.~n",
 		[inet_parse:ntoa(Ip), Port, PortNo, NodeType, Proto, HiVer, LoVer, NodeName, Extra, Creation]),
-	case ets:lookup(erlpmd, NodeName) of
-		[] ->
-			ets:insert_new(erlpmd, {NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra, Creation, Fd}}),
-			gen_server:cast(From, {msg, <<?EPMD_ALIVE2_RESP, 0:8, Creation:16>>, Ip, Port});
-		_ ->
+    case Store:register_node(NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra}, Fd, Creation, S0) of
+		ok ->
+			msg(From, <<$y, 0:8, Creation:16>>, Ip, Port),
+            {noreply, State};
+        {ok, S1} ->
+            msg(From, <<$y, 0:8, Creation:16>>, Ip, Port),
+            {noreply, State#state{store={Store, S1}}};
+        {error, registered} ->
 			% Already registered - reply with error
 			error_logger:error_msg("ErlPMD: ~s 'name' is already registered.~n", [NodeName]),
-			gen_server:cast(From, {msg, <<?EPMD_ALIVE2_RESP, 1:8, 99:16>>, Ip, Port})
-	end,
-	{noreply, State};
+			msg(From, <<$y, 1:8, 99:16>>, Ip, Port),
+            {noreply, State}
+    end;
 
 
-handle_cast({{msg, From},<<?EPMD_PORT_PLEASE2_REQ, NodeName/binary>>, _Fd, Ip, Port}, State) ->
+handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
+    #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: port ~s request from ~s:~p.~n", [NodeName, inet_parse:ntoa(Ip), Port]),
-	case ets:lookup(erlpmd, NodeName) of
-		[] ->
-			gen_server:cast(From, {msg, <<$w, 1:8>>, Ip, Port});
-		[{NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra, _, _}}] ->
+    case Store:node_port(NodeName, S0) of
+        {error, not_found} ->
+			msg(From, <<$w, 1:8>>, Ip, Port);
+        {ok, {NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra, _, _}}} ->
 			NLen = size(NodeName),
 			ELen = size(Extra),
-			gen_server:cast(From, {msg, <<?EPMD_PORT2_RESP, 0:8, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16, NLen:16, NodeName:NLen/binary, ELen:16, Extra:ELen/binary>>, Ip, Port})
+			msg(From, <<$w, 0:8, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16, NLen:16, NodeName:NLen/binary, ELen:16, Extra:ELen/binary>>, Ip, Port)
 	end,
-	gen_server:cast(From, {close, Ip, Port}),
+	close(From, Ip, Port),
 	{noreply, State};
 
-handle_cast({{msg, From},<<?EPMD_NAMES>>, _Fd, Ip, Port}, State) ->
+handle_cast({{msg, From},<<$n>>, _Fd, Ip, Port}, State) ->
+    #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: name(s) request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || [X, Y] <- ets:match(erlpmd, {'$1', {'$2', 77, '_', '_', '_', '_', '_', '_'}})])),
-	gen_server:cast(From, {msg, <<4369:32, Nodes/binary>>, Ip, Port}),
-	gen_server:cast(From, {close, Ip, Port}),
+    {ok, NodeInfos} = Store:names(S0),
+	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || {X, Y} <- NodeInfos])),
+    %% TODO This is the WRONG PORT
+	msg(From, <<Port:32, Nodes/binary>>, Ip, Port),
+	close(From, Ip, Port),
 	{noreply, State};
 
-handle_cast({{msg, From},<<?EPMD_DUMP>>, _Fd, Ip, Port}, State) ->
+handle_cast({{msg, From},<<$d>>, _Fd, Ip, Port}, State) ->
+    #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: dump request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || [X, Y, F] <- ets:match(erlpmd, {'$1', {'$2', 77, '_', '_', '_', '_', '_', '$3'}})])),
-	gen_server:cast(From, {msg, <<4369:32, Nodes/binary>>, Ip, Port}),
-	gen_server:cast(From, {close, Ip, Port}),
+    {ok, NodeDump} = Store:dump(77, S0),
+	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || {X, Y, F} <- NodeDump])),
+    %% TODO This is the WRONG PORT
+	msg(From, <<Port:32, Nodes/binary>>, Ip, Port),
+	close(From, Ip, Port),
 	{noreply, State};
 
-handle_cast({{msg, From},<<?EPMD_KILL>>, _Fd, Ip, Port}, true) ->
+handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=true}=State) ->
 	% Allow stop command in case we're running with -relaxed_command_check
 	% w/o checking for actually available nodes
 	error_logger:info_msg("ErlPMD: kill request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	gen_server:cast(From, {msg, <<"OK">>, Ip, Port}),
-	gen_server:cast(From, stop),
-	{stop, normal, true};
-handle_cast({{msg, From},<<?EPMD_KILL>>, _Fd, Ip, Port}, false) ->
+	msg(From, <<"OK">>, Ip, Port),
+	stop(From),
+	{stop, normal, State};
+handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State) ->
+    #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: kill request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	gen_server:cast(From, {msg, <<"OK">>, Ip, Port}),
-	case ets:match(erlpmd, {'_', {'_', '_', '_', '_', '_', '_', '_', '_'}}) of
-		[] ->
+	msg(From, <<"OK">>, Ip, Port),
+    %% TODO This is ETS specific knowledge '_'
+    case Store:dump(all, S0) of
+        {ok, []} ->
 			% No live nodes - we may exit now
-			gen_server:cast(From, stop),
-			{stop, normal, false};
-		_ ->
-			% Disallow killing witl live nodes
-			{noreply, false}
+			stop(From),
+			{stop, normal, State};
+        {ok, _} ->
+			% Disallow killing with live nodes
+			{noreply, State}
 	end;
 
-handle_cast({{msg, From},<<?EPMD_STOP, NodeName/binary>>, _Fd, Ip, Port}, false) ->
+handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State) ->
 	% Ignore stop command in case we're running w/o -relaxed_command_check
 	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p. (IGNORED)~n", [NodeName, inet_parse:ntoa(Ip), Port]),
-	gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port}),
-	{noreply, false};
-handle_cast({{msg, From},<<?EPMD_STOP, NodeName/binary>>, _Fd, Ip, Port}, true) ->
+	msg(From, <<"STOPPED">>, Ip, Port),
+	{noreply, State};
+handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed_cmd=true}=State) ->
+    #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p.~n", [NodeName, inet_parse:ntoa(Ip), Port]),
-	case ets:match(erlpmd, {NodeName, {'_', '_', '_', '_', '_', '_', '_', '_'}}) of
-		[] ->
-			gen_server:cast(From, {msg, <<"NOEXIST">>, Ip, Port});
-		_ ->
-			ets:delete(erlpmd, NodeName),
-			gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port})
-	end,
-	gen_server:cast(From, {close, Ip, Port}),
-	{noreply, true};
+    State1 =
+        case Store:remove_node(NodeName, S0) of
+            ok ->
+                msg(From, <<"STOPPED">>, Ip, Port),
+                State;
+            {ok, S1} ->
+                msg(From, <<"STOPPED">>, Ip, Port),
+                State#state{store={Store, S1}};
+            {error, no_node} ->
+                msg(From, <<"NOEXIST">>, Ip, Port),
+                State
+        end,
+    close(From, Ip, Port),
+    {noreply, State1};
 
 handle_cast({{close, _From}, Fd}, State) ->
+    #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: closed connection: ~p.~n", [Fd]),
-	case ets:match(erlpmd, {'$1', {'_', '_', '_', '_', '_', '_', '_', Fd}}) of
-		[[NodeName]] -> ets:delete(erlpmd, NodeName);
-		_ -> ok
-	end,
-	{noreply, State};
+    case Store:node_stopped(Fd, S0) of
+        ok -> {noreply, State};
+        {ok, S1} -> {noreply, State#state{store={Store, S1}}}
+    end;
 
 handle_cast(Msg, State) ->
 	error_logger:warning_msg("ErlPMD: strange cast: ~p.~n", [Msg]),
