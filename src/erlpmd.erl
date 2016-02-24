@@ -106,23 +106,25 @@ handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
 	gen_server:cast(From, {close, Ip, Port}),
 	{noreply, State};
 
-handle_cast({{msg, From},<<$n>>, _Fd, Ip, Port}, State) ->
+handle_cast({{msg, From},<<$n>>, Fd, Ip, Port}, State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: name(s) request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
     {ok, NodeInfos} = Store:names(S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || {X, Y} <- NodeInfos])),
-    %% TODO This is the WRONG PORT
-	gen_server:cast(From, {msg, <<Port:32, Nodes/binary>>, Ip, Port}),
+    %% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
+    {ok, LocalPort} = inet:port(Fd),
+	gen_server:cast(From, {msg, <<LocalPort:32, Nodes/binary>>, Ip, Port}),
 	gen_server:cast(From, {close, Ip, Port}),
 	{noreply, State};
 
-handle_cast({{msg, From},<<$d>>, _Fd, Ip, Port}, State) ->
+handle_cast({{msg, From},<<$d>>, Fd, Ip, Port}, State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: dump request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
     {ok, NodeDump} = Store:dump(77, S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || {X, Y, F} <- NodeDump])),
-    %% TODO This is the WRONG PORT
-	gen_server:cast(From, {msg, <<Port:32, Nodes/binary>>, Ip, Port}),
+    %% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
+    {ok, LocalPort} = inet:port(Fd),
+	gen_server:cast(From, {msg, <<LocalPort:32, Nodes/binary>>, Ip, Port}),
 	gen_server:cast(From, {close, Ip, Port}),
 	{noreply, State};
 
