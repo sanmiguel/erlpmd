@@ -13,14 +13,20 @@
          remove_node/2
         ]).
 
+-record(node, {name, port_no, type, protocol, highest_version, lowest_version,
+               extra, fd, creation}).
+
 init([]) ->
-    erlpmd = ets:new(erlpmd, [public, named_table]),
+    erlpmd = ets:new(erlpmd, [public, named_table, {keypos, #node.name}]),
     {ok, erlpmd}.
 
 register_node(NodeName, {PortNo, NodeType, Protocol, HighestVersion, LowestVersion, Extra}, Fd, Creation, erlpmd) ->
     case ets:lookup(erlpmd, NodeName) of
         [] ->
-            ets:insert_new(erlpmd, {NodeName, {PortNo, NodeType, Protocol, HighestVersion, LowestVersion, Extra, Fd, Creation}}),
+            Node = #node{name=NodeName, port_no=PortNo, type=NodeType,
+                         protocol=Protocol, highest_version=HighestVersion,
+                         lowest_version=LowestVersion, extra=Extra, fd=Fd, creation=Creation},
+            ets:insert_new(erlpmd, Node),
             ok;
         _ -> {error, registered}
     end.
@@ -36,19 +42,20 @@ node_port(NodeName, erlpmd) ->
 
 names(erlpmd) ->
     {ok, [{Name, Port}
-          || [Name, Port] <- ets:match(erlpmd, {'$1', {'$2', 77, '_', '_', '_', '_', '_', '_'}})]}.
+          || [Name, Port] <- ets:match(erlpmd, #node{name='$1', port_no='$2', type=77, _='_'})]}.
 
 dump(all, erlpmd) -> dump('_', erlpmd);
 dump(NodeType, erlpmd) ->
     {ok, [{Name, Port, Fd}
           || [Name, Port, Fd] <- ets:match(erlpmd,
-                                           {'$1', {'$2', NodeType, '_', '_', '_', '_', '$3', '_'}})]}.
+                                           #node{name='$1', port_no='$2', type=NodeType, fd='$3', _='_'})]}.
 
 node_stopped(Fd, erlpmd) ->
-	case ets:match(erlpmd, {'$1', {'_', '_', '_', '_', '_', '_', '_', Fd}}) of
+	case ets:match(erlpmd, #node{name='$1', fd=Fd, _='_'}) of
 		[[NodeName]] -> remove_node(NodeName, erlpmd);
 		_ -> ok
 	end.
 
 remove_node(NodeName, erlpmd) ->
-    ets:delete(NodeName).
+    true = ets:delete(erlpmd, NodeName),
+    {ok, erlpmd}.
