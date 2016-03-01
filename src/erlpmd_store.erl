@@ -6,14 +6,14 @@
 -callback register_node(
 			NodeName :: binary(),
 			{
-			 PortNo :: non_neg_integer(), % TODO I'm sure there's an inet type() to use
+			 PortNo :: inet:port_number(),
 			 NodeType :: 72 | 77,
 			 Protocol :: non_neg_integer(),
 			 HighestVersion :: non_neg_integer(),
 			 LowestVersion :: non_neg_integer(),
 			 Extra :: binary()
 			},
-			Fd :: inet:socket(), %% TODO Check this type I can never remember the correct thing
+			Fd :: inet:socket(),
 			Creation :: non_neg_integer(),
 			State :: any()) ->
 	ok
@@ -22,7 +22,7 @@
 	| {error, Reason :: term()}.
 
 -callback node_port(NodeName :: binary(), State :: any()) ->
-	{ok, PortNo :: non_neg_integer()}
+	{ok, PortNo :: inet:port_number()}
 	| {error, Reason :: term()}.
 
 -callback names(State :: any()) ->
@@ -30,7 +30,7 @@
 	| {error, Reason :: term()}.
 
 -callback dump(NodeType :: 72 | 77 | all, State :: any()) ->
-	{ok, list({Name :: binary(), Port :: non_neg_integer(), Fd :: inet:socket()})}
+	{ok, list({Name :: binary(), Port :: inet:port_number(), Fd :: inet:socket()})}
 	| {error, Reason :: term()}.
 
 -callback node_stopped(Fd :: inet:socket(), State :: any()) ->
