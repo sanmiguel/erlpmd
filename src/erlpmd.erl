@@ -49,6 +49,15 @@
 start_link(Args) ->
 	gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
+msg(Pid, Msg, Ip, Port) when is_binary(Msg) ->
+    gen_server:cast(Pid, {msg, Msg, Ip, Port}).
+
+close(Pid, Ip, Port) ->
+    gen_server:cast(Pid, {close, Ip, Port}).
+
+stop(Pid) ->
+    gen_server:cast(Pid, stop).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -79,15 +88,15 @@ handle_cast({{msg,From},<<$x, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16
 		[inet_parse:ntoa(Ip), Port, PortNo, NodeType, Proto, HiVer, LoVer, NodeName, Extra, Creation]),
     case Store:register_node(NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra}, Fd, Creation, S0) of
 		ok ->
-			gen_server:cast(From, {msg, <<$y, 0:8, Creation:16>>, Ip, Port}),
+			msg(From, <<$y, 0:8, Creation:16>>, Ip, Port),
             {noreply, State};
         {ok, S1} ->
-            gen_server:cast(From, {msg, <<$y, 0:8, Creation:16>>, Ip, Port}),
+            msg(From, <<$y, 0:8, Creation:16>>, Ip, Port),
             {noreply, State#state{store={Store, S1}}};
         {error, registered} ->
 			% Already registered - reply with error
 			error_logger:error_msg("ErlPMD: ~s 'name' is already registered.~n", [NodeName]),
-			gen_server:cast(From, {msg, <<$y, 1:8, 99:16>>, Ip, Port}),
+			msg(From, <<$y, 1:8, 99:16>>, Ip, Port),
             {noreply, State}
     end;
 
@@ -97,13 +106,13 @@ handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
 	error_logger:info_msg("ErlPMD: port ~s request from ~s:~p.~n", [NodeName, inet_parse:ntoa(Ip), Port]),
     case Store:node_port(NodeName, S0) of
         {error, not_found} ->
-			gen_server:cast(From, {msg, <<$w, 1:8>>, Ip, Port});
+			msg(From, <<$w, 1:8>>, Ip, Port);
         {ok, {NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra, _, _}}} ->
 			NLen = size(NodeName),
 			ELen = size(Extra),
-			gen_server:cast(From, {msg, <<$w, 0:8, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16, NLen:16, NodeName:NLen/binary, ELen:16, Extra:ELen/binary>>, Ip, Port})
+			msg(From, <<$w, 0:8, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16, NLen:16, NodeName:NLen/binary, ELen:16, Extra:ELen/binary>>, Ip, Port)
 	end,
-	gen_server:cast(From, {close, Ip, Port}),
+	close(From, Ip, Port),
 	{noreply, State};
 
 handle_cast({{msg, From},<<$n>>, Fd, Ip, Port}, State) ->
@@ -113,8 +122,8 @@ handle_cast({{msg, From},<<$n>>, Fd, Ip, Port}, State) ->
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || {X, Y} <- NodeInfos])),
     %% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
     {ok, LocalPort} = inet:port(Fd),
-	gen_server:cast(From, {msg, <<LocalPort:32, Nodes/binary>>, Ip, Port}),
-	gen_server:cast(From, {close, Ip, Port}),
+	msg(From, <<LocalPort:32, Nodes/binary>>, Ip, Port),
+	close(From, Ip, Port),
 	{noreply, State};
 
 handle_cast({{msg, From},<<$d>>, Fd, Ip, Port}, State) ->
@@ -124,26 +133,26 @@ handle_cast({{msg, From},<<$d>>, Fd, Ip, Port}, State) ->
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || {X, Y, F} <- NodeDump])),
     %% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
     {ok, LocalPort} = inet:port(Fd),
-	gen_server:cast(From, {msg, <<LocalPort:32, Nodes/binary>>, Ip, Port}),
-	gen_server:cast(From, {close, Ip, Port}),
+	msg(From, <<LocalPort:32, Nodes/binary>>, Ip, Port),
+	close(From, Ip, Port),
 	{noreply, State};
 
 handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=true}=State) ->
 	% Allow stop command in case we're running with -relaxed_command_check
 	% w/o checking for actually available nodes
 	error_logger:info_msg("ErlPMD: kill request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	gen_server:cast(From, {msg, <<"OK">>, Ip, Port}),
-	gen_server:cast(From, stop),
+	msg(From, <<"OK">>, Ip, Port),
+	stop(From),
 	{stop, normal, State};
 handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State) ->
     #state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: kill request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	gen_server:cast(From, {msg, <<"OK">>, Ip, Port}),
+	msg(From, <<"OK">>, Ip, Port),
     %% TODO This is ETS specific knowledge '_'
     case Store:dump(all, S0) of
         {ok, []} ->
 			% No live nodes - we may exit now
-			gen_server:cast(From, stop),
+			stop(From),
 			{stop, normal, State};
         {ok, _} ->
 			% Disallow killing with live nodes
@@ -153,7 +162,7 @@ handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State
 handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State) ->
 	% Ignore stop command in case we're running w/o -relaxed_command_check
 	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p. (IGNORED)~n", [NodeName, inet_parse:ntoa(Ip), Port]),
-	gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port}),
+	msg(From, <<"STOPPED">>, Ip, Port),
 	{noreply, State};
 handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed_cmd=true}=State) ->
     #state{store = {Store, S0}} = State,
@@ -161,16 +170,16 @@ handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed
     State1 =
         case Store:remove_node(NodeName, S0) of
             ok ->
-                gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port}),
+                msg(From, <<"STOPPED">>, Ip, Port),
                 State;
             {ok, S1} ->
-                gen_server:cast(From, {msg, <<"STOPPED">>, Ip, Port}),
+                msg(From, <<"STOPPED">>, Ip, Port),
                 State#state{store={Store, S1}};
             {error, no_node} ->
-                gen_server:cast(From, {msg, <<"NOEXIST">>, Ip, Port}),
+                msg(From, <<"NOEXIST">>, Ip, Port),
                 State
         end,
-    gen_server:cast(From, {close, Ip, Port}),
+    close(From, Ip, Port),
     {noreply, State1};
 
 handle_cast({{close, _From}, Fd}, State) ->
