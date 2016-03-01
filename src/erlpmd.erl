@@ -147,7 +147,6 @@ handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State
 	#state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: kill request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
 	msg(From, <<"OK">>, Ip, Port),
-	%% TODO This is ETS specific knowledge '_'
 	case Store:dump(all, S0) of
 		{ok, []} ->
 			% No live nodes - we may exit now

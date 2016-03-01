@@ -29,9 +29,8 @@
 	{ok, Names :: list(binary())}
 	| {error, Reason :: term()}.
 
-%% TODO Maybe this should give back the structured data and let erlpmd take care of the structure->binary conv?
--callback dump(NodeType :: 72 | 77, State :: any()) ->
-	{ok, list()}
+-callback dump(NodeType :: 72 | 77 | all, State :: any()) ->
+	{ok, list({Name :: binary(), Port :: non_neg_integer(), Fd :: inet:socket()})}
 	| {error, Reason :: term()}.
 
 -callback node_stopped(Fd :: inet:socket(), State :: any()) ->
