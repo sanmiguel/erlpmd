@@ -51,4 +51,5 @@ node_stopped(Fd, erlpmd) ->
 	end.
 
 remove_node(NodeName, erlpmd) ->
-	ets:delete(NodeName).
+	true = ets:delete(NodeName),
+	{ok, erlpmd}.
