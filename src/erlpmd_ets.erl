@@ -45,11 +45,11 @@ dump(NodeType, erlpmd) ->
 										   {'$1', {'$2', NodeType, '_', '_', '_', '_', '$3', '_'}})]}.
 
 node_stopped(Fd, erlpmd) ->
-	case ets:match(erlpmd, {'$1', {'_', '_', '_', '_', '_', '_', '_', Fd}}) of
+	case ets:match(erlpmd, {'$1', {'_', '_', '_', '_', '_', '_', Fd, '_'}}) of
 		[[NodeName]] -> remove_node(NodeName, erlpmd);
 		_ -> ok
 	end.
 
 remove_node(NodeName, erlpmd) ->
-	true = ets:delete(NodeName),
+	true = ets:delete(erlpmd, NodeName),
 	{ok, erlpmd}.
