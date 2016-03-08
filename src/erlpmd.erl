@@ -37,6 +37,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 		 terminate/2, code_change/3]).
 
+-include("erlpmd.hrl").
+
 -record(state,
 		{
 		 store :: {atom(), any()},
@@ -117,7 +119,7 @@ handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
 handle_cast({{msg, From},<<$n>>, Fd, Ip, Port}, State) ->
 	#state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: name(s) request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	{ok, NodeInfos} = Store:names(S0),
+	{ok, NodeInfos} = Store:names(?NORMAL_NODE, S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || {X, Y} <- NodeInfos])),
 	%% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
 	{ok, LocalPort} = inet:port(Fd),
@@ -128,7 +130,7 @@ handle_cast({{msg, From},<<$n>>, Fd, Ip, Port}, State) ->
 handle_cast({{msg, From},<<$d>>, Fd, Ip, Port}, State) ->
 	#state{store = {Store, S0}} = State,
 	error_logger:info_msg("ErlPMD: dump request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
-	{ok, NodeDump} = Store:dump(77, S0),
+	{ok, NodeDump} = Store:dump(?NORMAL_NODE, S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || {X, Y, F} <- NodeDump])),
 	%% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
 	{ok, LocalPort} = inet:port(Fd),

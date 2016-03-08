@@ -7,7 +7,7 @@
 		 init/1,
 		 register_node/5,
 		 node_port/2,
-		 names/1,
+		 names/2,
 		 dump/2,
 		 node_stopped/2,
 		 remove_node/2
@@ -34,9 +34,9 @@ node_port(NodeName, erlpmd) ->
 			{ok, NodeInfo}
 	end.
 
-names(erlpmd) ->
+names(Type, erlpmd) ->
 	{ok, [{Name, Port}
-		  || [Name, Port] <- ets:match(erlpmd, {'$1', {'$2', 77, '_', '_', '_', '_', '_', '_'}})]}.
+		  || [Name, Port] <- ets:match(erlpmd, {'$1', {'$2', Type, '_', '_', '_', '_', '_', '_'}})]}.
 
 dump(all, erlpmd) -> dump('_', erlpmd);
 dump(NodeType, erlpmd) ->

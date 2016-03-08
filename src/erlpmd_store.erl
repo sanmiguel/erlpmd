@@ -1,5 +1,7 @@
 -module(erlpmd_store).
 
+-include("erlpmd.hrl").
+
 -callback init(Args :: list(any()) ) -> {ok, State :: any()}
 					| {error, Reason :: term()}.
 
@@ -7,7 +9,7 @@
 			NodeName :: binary(),
 			{
 			 PortNo :: inet:port_number(),
-			 NodeType :: 72 | 77,
+			 NodeType :: ?NORMAL_NODE | ?HIDDEN_NODE,
 			 Protocol :: non_neg_integer(),
 			 HighestVersion :: non_neg_integer(),
 			 LowestVersion :: non_neg_integer(),
@@ -25,11 +27,11 @@
 	{ok, PortNo :: inet:port_number()}
 	| {error, Reason :: term()}.
 
--callback names(State :: any()) ->
+-callback names(Type :: ?NORMAL_NODE | ?HIDDEN_NODE, State :: any()) ->
 	{ok, Names :: list(binary())}
 	| {error, Reason :: term()}.
 
--callback dump(NodeType :: 72 | 77 | all, State :: any()) ->
+-callback dump(NodeType :: ?NORMAL_NODE | ?HIDDEN_NODE | all, State :: any()) ->
 	{ok, list({Name :: binary(), Port :: inet:port_number(), Fd :: inet:socket()})}
 	| {error, Reason :: term()}.
 
