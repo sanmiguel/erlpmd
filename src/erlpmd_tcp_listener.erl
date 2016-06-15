@@ -56,11 +56,11 @@ init ([Ip, Port]) ->
 				       gen_tcp:listen(Port, Opts)
 		       end,
 	{ok, Ref} = prim_inet:async_accept(Socket, -1),
-	error_logger:info_msg("ErlPMD listener: started at Ip: ~s:~b~n", [inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD listener: started at Ip: ~s:~b", [inet_parse:ntoa(Ip), Port]),
 	{ok, #state{listener = Socket, acceptor = Ref}}.
 
 handle_call(Other, From, State) ->
-	error_logger:warning_msg("ErlPMD listener: strange call: ~p from ~p.~n", [Other, From]),
+	error_logger:warning_msg("ErlPMD listener: strange call: ~p from ~p.", [Other, From]),
 	{noreply, State}.
 
 handle_cast({msg, Msg, Ip, Port}, State = #state{clients=Clients}) ->
@@ -75,7 +75,7 @@ handle_cast({msg, Msg, Ip, Port}, State = #state{clients=Clients}) ->
 	{noreply, State};
 
 handle_cast({close, Ip, Port}, #state{clients = Clients} = State) ->
-	error_logger:info_msg("ErlPMD listener: closing connection: ~s:~b.~n", [inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD listener: closing connection: ~s:~b.", [inet_parse:ntoa(Ip), Port]),
 	case get_socket(Clients, Ip, Port) of
 		error ->
 			ok;
@@ -89,7 +89,7 @@ handle_cast(stop, State) ->
 	{stop, normal, State};
 
 handle_cast(Other, State) ->
-	error_logger:warning_msg("ErlPMD listener: strange cast: ~p.~n", [Other]),
+	error_logger:warning_msg("ErlPMD listener: strange cast: ~p.", [Other]),
 	{noreply, State}.
 
 handle_info({tcp, Fd, Msg}, State) ->
@@ -101,7 +101,7 @@ handle_info({tcp, Fd, Msg}, State) ->
 handle_info({tcp_closed, Client}, #state{clients = Clients} = State) ->
 	gen_tcp:close(Client),
 	gen_server:cast(erlpmd, {{close, self()}, Client}),
-	error_logger:info_msg("ErlPMD listener: client ~p closed connection.~n", [Client]),
+	error_logger:info_msg("ErlPMD listener: client ~p closed connection.", [Client]),
 	{noreply, State#state{clients = lists:delete(Client, Clients)}};
 
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}}, #state{listener = ListSock, acceptor = Ref, clients = Clients} = State) ->
@@ -120,17 +120,17 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}}, #state{listener = List
 	{noreply, State#state{acceptor=NewRef, clients = Clients ++ [CliSocket]}};
 
 handle_info({inet_async, ListSock, Ref, Error}, #state{listener = ListSock, acceptor = Ref} = State) ->
-	error_logger:error_msg("ErlPMD listener: error in socket acceptor: ~p.~n", [Error]),
+	error_logger:error_msg("ErlPMD listener: error in socket acceptor: ~p.", [Error]),
 	{stop, Error, State};
 
 handle_info(Info, State) ->
-	error_logger:warning_msg("ErlPMD listener: strange info: ~p.~n", [Info]),
+	error_logger:warning_msg("ErlPMD listener: strange info: ~p.", [Info]),
 	{noreply, State}.
 
 terminate(Reason, #state{listener = Listener, clients = Clients}) ->
 	gen_tcp:close(Listener),
 	lists:map(fun gen_tcp:close/1, Clients),
-	error_logger:error_msg("ErlPMD listener: closed: ~p.~n", [Reason]),
+	error_logger:error_msg("ErlPMD listener: closed: ~p.", [Reason]),
 	ok.
 
 code_change(_OldVsn, State, _Extra) ->

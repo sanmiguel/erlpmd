@@ -68,7 +68,7 @@ init([]) ->
 	init([erlpmd, []]);
 init([Store, Args]) ->
 	{ok, S0} = Store:init(Args),
-	error_logger:info_msg("ErlPMD: started.~n"),
+	error_logger:info_msg("ErlPMD: started."),
 	self() ! notify_init,
 	{ok, RelaxedCommandCheck} = application:get_env(erlpmd, relaxed_command_check),
 	State = #state{
@@ -86,7 +86,7 @@ handle_cast({{msg,From},<<$x, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16
 	#state{store = {Store, S0}} = State,
 	Creation = random:uniform(3),
 	error_logger:info_msg(
-		"ErlPMD: alive request from ~s:~b PortNo: ~b, NodeType: ~b, Proto: ~b, HiVer: ~b, LoVer: ~b, NodeName: '~s', Extra: ~p, Creation: ~b.~n",
+		"ErlPMD: alive request from ~s:~b PortNo: ~b, NodeType: ~b, Proto: ~b, HiVer: ~b, LoVer: ~b, NodeName: '~s', Extra: ~p, Creation: ~b.",
 		[inet_parse:ntoa(Ip), Port, PortNo, NodeType, Proto, HiVer, LoVer, NodeName, Extra, Creation]),
 	case Store:register_node(NodeName, {PortNo, NodeType, Proto, HiVer, LoVer, Extra}, Fd, Creation, S0) of
 		ok ->
@@ -104,7 +104,7 @@ handle_cast({{msg,From},<<$x, PortNo:16, NodeType:8, Proto:8, HiVer:16, LoVer:16
 
 handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
 	#state{store = {Store, S0}} = State,
-	error_logger:info_msg("ErlPMD: port ~s request from ~s:~p.~n", [NodeName, inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD: port ~s request from ~s:~p.", [NodeName, inet_parse:ntoa(Ip), Port]),
 	case Store:node_port(NodeName, S0) of
 		{error, not_found} ->
 			msg(From, <<$w, 1:8>>, Ip, Port);
@@ -118,7 +118,7 @@ handle_cast({{msg, From},<<$z, NodeName/binary>>, _Fd, Ip, Port}, State) ->
 
 handle_cast({{msg, From},<<$n>>, Fd, Ip, Port}, State) ->
 	#state{store = {Store, S0}} = State,
-	error_logger:info_msg("ErlPMD: name(s) request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD: name(s) request from ~s:~p.", [inet_parse:ntoa(Ip), Port]),
 	{ok, NodeInfos} = Store:names(?NORMAL_NODE, S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("name ~s at port ~p~n", [X, Y]) || {X, Y} <- NodeInfos])),
 	%% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
@@ -129,7 +129,7 @@ handle_cast({{msg, From},<<$n>>, Fd, Ip, Port}, State) ->
 
 handle_cast({{msg, From},<<$d>>, Fd, Ip, Port}, State) ->
 	#state{store = {Store, S0}} = State,
-	error_logger:info_msg("ErlPMD: dump request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD: dump request from ~s:~p.", [inet_parse:ntoa(Ip), Port]),
 	{ok, NodeDump} = Store:dump(?NORMAL_NODE, S0),
 	Nodes = list_to_binary(lists:flatten([ io_lib:format("active name     ~s at port ~p, fd = ~p ~n", [X, Y, F]) || {X, Y, F} <- NodeDump])),
 	%% TODO Validate that this will work if LISTEN_FDS is set (if that's even a thing any more?)
@@ -141,13 +141,13 @@ handle_cast({{msg, From},<<$d>>, Fd, Ip, Port}, State) ->
 handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=true}=State) ->
 	% Allow stop command in case we're running with -relaxed_command_check
 	% w/o checking for actually available nodes
-	error_logger:info_msg("ErlPMD: kill request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD: kill request from ~s:~p.", [inet_parse:ntoa(Ip), Port]),
 	msg(From, <<"OK">>, Ip, Port),
 	stop(From),
 	{stop, normal, State};
 handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State) ->
 	#state{store = {Store, S0}} = State,
-	error_logger:info_msg("ErlPMD: kill request from ~s:~p.~n", [inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD: kill request from ~s:~p.", [inet_parse:ntoa(Ip), Port]),
 	msg(From, <<"OK">>, Ip, Port),
 	case Store:dump(all, S0) of
 		{ok, []} ->
@@ -161,12 +161,12 @@ handle_cast({{msg, From},<<$k>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State
 
 handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed_cmd=false}=State) ->
 	% Ignore stop command in case we're running w/o -relaxed_command_check
-	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p. (IGNORED)~n", [NodeName, inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p. (IGNORED)", [NodeName, inet_parse:ntoa(Ip), Port]),
 	msg(From, <<"STOPPED">>, Ip, Port),
 	{noreply, State};
 handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed_cmd=true}=State) ->
 	#state{store = {Store, S0}} = State,
-	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p.~n", [NodeName, inet_parse:ntoa(Ip), Port]),
+	error_logger:info_msg("ErlPMD: '~s' stop request from ~s:~p.", [NodeName, inet_parse:ntoa(Ip), Port]),
 	State1 =
 		case Store:remove_node(NodeName, S0) of
 			ok ->
@@ -184,7 +184,7 @@ handle_cast({{msg, From},<<$s, NodeName/binary>>, _Fd, Ip, Port}, #state{relaxed
 
 handle_cast({{close, _From}, Fd}, State) ->
 	#state{store = {Store, S0}} = State,
-	error_logger:info_msg("ErlPMD: closed connection: ~p.~n", [Fd]),
+	error_logger:info_msg("ErlPMD: closed connection: ~p.", [Fd]),
 	case Store:node_stopped(Fd, S0) of
 		ok -> {noreply, State};
 		{ok, S1} -> {noreply, State#state{store={Store, S1}}}
@@ -204,7 +204,7 @@ handle_info(Info, State) ->
 	{noreply, State}.
 
 terminate(_Reason, _State) ->
-	error_logger:info_msg("ErlPMD: stopped.~n"),
+	error_logger:info_msg("ErlPMD: stopped."),
 	ok.
 
 code_change(_OldVsn, State, _Extra) ->
